@@ -1,5 +1,7 @@
 package il.ac.afeka.cloud.layout;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Set;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -49,6 +51,18 @@ public class ProductBoundary {
 
 	public void setAvailableCoupons(Set<CouponBoundary> availableCoupons) {
 		this.availableCoupons = availableCoupons;
+	}
+	
+	public void addCoupon(CouponBoundary coupon) {
+		if (this.availableCoupons == null)
+			this.availableCoupons = new HashSet<CouponBoundary>();
+		this.availableCoupons.add(coupon);
+	}
+	
+	public void addCoupons(Collection<CouponBoundary> coupons) {
+		if (this.availableCoupons == null)
+			this.availableCoupons = new HashSet<CouponBoundary>();
+		this.availableCoupons.addAll(coupons);
 	}
 
 	@Override

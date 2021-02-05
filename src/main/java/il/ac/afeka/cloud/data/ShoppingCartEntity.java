@@ -1,6 +1,8 @@
 package il.ac.afeka.cloud.data;
 
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -66,6 +68,29 @@ public class ShoppingCartEntity {
 
 	public void setMoreProperties(Map<String, Object> moreProperties) {
 		this.moreProperties = moreProperties;
+	}
+	
+	public void addProduct(ProductEntity product) {
+		if (this.products == null)
+			this.products = new HashSet<ProductEntity>();
+		this.products.add(product);
+	}
+	
+	public void removeProduct(ProductEntity product) {
+		if (this.products != null)
+			this.products.remove(product);
+	}
+
+	public void addMoreProperties(String key, Object value) {
+		if (this.moreProperties == null)
+			this.moreProperties = new HashMap<String, Object>();
+		this.moreProperties.put(key, value);
+	}
+
+	public void addMoreProperties(Map<String, Object> map) {
+		if (this.moreProperties == null)
+			this.moreProperties = new HashMap<String, Object>();
+		this.moreProperties.putAll(map);
 	}
 
 	@Override

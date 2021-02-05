@@ -1,6 +1,7 @@
 package il.ac.afeka.cloud.layout;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -28,21 +29,19 @@ public class ShoppingCartsController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
 	public ShoppingCartBoundary createShoppingCart(@RequestBody ShoppingCartBoundary shoppingCartBoundary) {
-		return shoppingCartsService.createShoppingCart(shoppingCartBoundary);
+		try {
+			return shoppingCartsService.transactionalCreateShoppingCart(shoppingCartBoundary);
+		} catch (InvalidDataAccessApiUsageException e) {
+			return shoppingCartsService.createShoppingCart(shoppingCartBoundary);
+		}
+		
 	}
 	
-	@RequestMapping(path = "/shoppingCarts/byId/{shoppingCartId}",
+	@RequestMapping(path = "/shoppingCarts/{emailOrShoppingCartId}",
             method = RequestMethod.GET,
             produces = MediaType.APPLICATION_JSON_VALUE)
-	public ShoppingCartBoundary getShoppingCart(@PathVariable("shoppingCartId") String shoppingCartId) {
-		return shoppingCartsService.getShoppingCart(shoppingCartId);
-	}
-	
-	@RequestMapping(path = "/shoppingCarts/{email}",
-            method = RequestMethod.GET,
-            produces = MediaType.APPLICATION_JSON_VALUE)
-	public ShoppingCartBoundary getShoppingCartByEmail(@PathVariable("email") String email) {
-		return shoppingCartsService.getShoppingCartByEmail(email);
+	public ShoppingCartBoundary getShoppingCart(@PathVariable("emailOrShoppingCartId") String emailOrShoppingCartId) {
+		return shoppingCartsService.getShoppingCart(emailOrShoppingCartId);
 	}
 	
 	@RequestMapping(path = "/shoppingCarts/{email}",
@@ -70,6 +69,12 @@ public class ShoppingCartsController {
 				 sortBy == null ? SortOrderEnum.DESC : sortOrder == null ? SortOrderEnum.ASC : sortOrder,
 						 size,
 						 page);
+	 }
+	 
+	 @RequestMapping(path = "/shoppingCarts",
+             method = RequestMethod.DELETE)
+	 public void deleteAll() {
+		 this.shoppingCartsService.deleteAll();
 	 }
 	 
 	 

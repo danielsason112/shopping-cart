@@ -18,4 +18,8 @@ public interface ShoppingCartService {
 	public ShoppingCartBoundary[] getAll(FilterTypeEnum filterType, String filterValue, SortAttrEnum sortBy, SortOrderEnum sortOrder,
 			int size, int page);
 
+	public void deleteAll();
+
+	public ShoppingCartBoundary transactionalCreateShoppingCart(ShoppingCartBoundary shoppingCartBoundary);
+
 }

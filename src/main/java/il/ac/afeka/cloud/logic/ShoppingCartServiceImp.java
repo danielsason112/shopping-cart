@@ -12,10 +12,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort.Direction;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException.NotFound;
+import org.springframework.web.client.HttpClientErrorException.Unauthorized;
 
-import il.ac.afeka.cloud.dao.ProductDao;
 import il.ac.afeka.cloud.dao.ShoppingCartDao;
-import il.ac.afeka.cloud.dao.UserDao;
 import il.ac.afeka.cloud.data.ProductEntity;
 import il.ac.afeka.cloud.data.ShoppingCartEntity;
 import il.ac.afeka.cloud.data.UserEntity;
@@ -23,6 +23,12 @@ import il.ac.afeka.cloud.data.util.EntityFactory;
 import il.ac.afeka.cloud.enums.FilterTypeEnum;
 import il.ac.afeka.cloud.enums.SortAttrEnum;
 import il.ac.afeka.cloud.enums.SortOrderEnum;
+import il.ac.afeka.cloud.errors.IllegalProductAmoutException;
+import il.ac.afeka.cloud.errors.ProductNotFoundException;
+import il.ac.afeka.cloud.errors.ShoppingCartNotFoundException;
+import il.ac.afeka.cloud.errors.UserNotFoundException;
+import il.ac.afeka.cloud.errors.UserNotProvidedException;
+import il.ac.afeka.cloud.layout.CouponBoundary;
 import il.ac.afeka.cloud.layout.ProductBoundary;
 import il.ac.afeka.cloud.layout.ShoppingCartBoundary;
 import il.ac.afeka.cloud.layout.UserBoundary;
@@ -30,68 +36,69 @@ import il.ac.afeka.cloud.layout.UserBoundary;
 @Service
 public class ShoppingCartServiceImp implements ShoppingCartService {
 	private ShoppingCartDao shoppingCartDao;
-	private UserDao userDao;
-	private ProductDao productDao;
 	private EntityFactory entityFactory;
+	private UsersManagementClient usersManagementClient;
+	private ShoppingCatalogClient shoppingCatalogClient;
+	private ProductsCouponClient productsCouponClient;
 	
 	@Autowired
-	public ShoppingCartServiceImp(ShoppingCartDao shoppingCartDao, UserDao userDao, ProductDao productDao,
-			EntityFactory entityFactory) {
+	public ShoppingCartServiceImp(ShoppingCartDao shoppingCartDao, EntityFactory entityFactory,
+			UsersManagementClient usersManagementClient, ShoppingCatalogClient shoppingCatalogClient, ProductsCouponClient productsCouponClient) {
 		this.shoppingCartDao = shoppingCartDao;
-		this.userDao = userDao;
-		this.productDao = productDao;
 		this.entityFactory = entityFactory;
+		this.usersManagementClient = usersManagementClient;
+		this.shoppingCatalogClient = shoppingCatalogClient;
+		this.productsCouponClient = productsCouponClient;
 	}
 
 	@Override
-	@Transactional
 	public ShoppingCartBoundary createShoppingCart(ShoppingCartBoundary shoppingCartBoundary) {
 		UserBoundary userBoundary = shoppingCartBoundary.getUser();
 		
 		if (userBoundary == null)
-			throw new RuntimeException("Can not create shopping cart, user must be provided in the request."); // TODO Throw error code 400
+			throw new UserNotProvidedException();
 		
-		if (!this.userDao.existsById(userBoundary.getEmail()))
-			throw new RuntimeException("Can not create shopping cart, no such user exists."); // TODO return error code 400
+		if (!this.UserExistsByEmail(userBoundary.getEmail()))
+			throw new UserNotFoundException();
 			
 		Set<ProductBoundary> products = shoppingCartBoundary.getProducts();
 		
 		if (products != null)
-			products.forEach(product -> {
-				if (!this.productDao.existsById(product.getProductId()))
-					throw new RuntimeException("Can not create shopping cart, one of the products does not exists."); // TODO return error code 400
-				if (product.getAmount() <= 0)
-					throw new RuntimeException("Can not create shopping cart with a product amount smaller than 1."); // TODO return error code 400
-			});
+			products.forEach(p -> this.validateProductBoundary(p));
 		
 		UserEntity userEntity = new UserEntity(userBoundary.getEmail());
 		
-		List<ShoppingCartEntity> notExpiredCart = this.shoppingCartDao.findByUserAndExpired(userEntity, false);
-		
-		notExpiredCart.forEach(cart -> {
-			cart.setExpired(true);
-			this.shoppingCartDao.save(cart);
-		});
+		this.shoppingCartDao.findByUserAndExpired(userEntity, false)
+			.forEach(cart -> {
+				cart.setExpired(true);
+				this.shoppingCartDao.save(cart);
+			});
 		
 		return this.toShoppingCartBoundary(
 				this.shoppingCartDao.save(
 				this.entityFactory.createNewShoppingCart(
 						userEntity,
 						products.stream()
-							.map(p -> new ProductEntity(
-								p.getProductId(), p.getAmount()))
+							.map(this::toProductEntity)
+							.filter(p -> p.getAmount() > 0)
 							.collect(Collectors.toSet()),
 						shoppingCartBoundary.getMoreProperties())));
+	}
+	
+	@Override
+	@Transactional
+	public ShoppingCartBoundary transactionalCreateShoppingCart(ShoppingCartBoundary shoppingCartBoundary) {
+		return this.createShoppingCart(shoppingCartBoundary);
 	}
 
 	@Override
 	public ShoppingCartBoundary getShoppingCart(String shoppingCartId) {
 		ShoppingCartEntity entity = this.shoppingCartDao.findById(shoppingCartId).orElse(null);
 		
-		if (entity == null)
-			throw new RuntimeException("No such shopping cart exists."); // TODO return error code 404
+		if (entity != null)
+			return this.toShoppingCartBoundary(entity);
 		
-		return this.toShoppingCartBoundary(entity);
+		return this.getShoppingCartByEmail(shoppingCartId);
 	}
 
 	@Override
@@ -99,48 +106,70 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 		List<ShoppingCartEntity> notExpiredCarts = this.shoppingCartDao.findByUserAndExpired(new UserEntity(email), false);
 		
 		if (notExpiredCarts.isEmpty())
-			throw new RuntimeException("No current cart for user exists."); // TODO return error code 404
+			throw new ShoppingCartNotFoundException();
 		
-		return this.toShoppingCartBoundary(notExpiredCarts.get(0));
+		ShoppingCartBoundary shoppingCart = this.toShoppingCartBoundary(notExpiredCarts.get(0));
+		
+		
+		
+		shoppingCart.getProducts().forEach(p -> {
+			List<CouponBoundary> coupons;
+			int page = 0;
+			int size = 100;
+			try {
+				do {
+					coupons = this.productsCouponClient.getCouponsByProductId(p.getProductId(), "isUsed", "ASC", size, page);
+					p.addCoupons(
+							coupons.stream()
+							.takeWhile(c -> !c.isUsed())
+									.collect(Collectors.toSet()));
+					
+					if (!coupons.isEmpty())
+						if(coupons.get(coupons.size() - 1).isUsed())
+							break;
+					page++;
+				} while (coupons.size() == size);
+			} catch (Exception e) {
+				System.err.println(e);
+			}
+			
+		});
+				
+		return shoppingCart;
 	}
 
 	@Override
-	@Transactional
 	public void updateShoppingCart(String email, ShoppingCartBoundary shoppingCartBoundary) {
 
 		List<ShoppingCartEntity> notExpiredCarts = this.shoppingCartDao.findByUserAndExpired(new UserEntity(email), false);
 		
 		if (notExpiredCarts.isEmpty())
-			throw new RuntimeException("No current cart for user exists."); // TODO return error code 404
+			throw new ShoppingCartNotFoundException();
 		
 		ShoppingCartEntity entity = notExpiredCarts.get(0);
 				
 		if (!entity.isExpired())
 			entity.setExpired(shoppingCartBoundary.isExpired());
 		
-		Map<String, Object> entityMP = entity.getMoreProperties();
 		Map<String, Object> boundaryMP = shoppingCartBoundary.getMoreProperties();
 		
-		if (boundaryMP != null && entityMP != null)
-			entityMP.putAll(boundaryMP);
-		else if (boundaryMP != null)
-			entity.setMoreProperties(boundaryMP);
+		if (boundaryMP != null)
+			entity.addMoreProperties(boundaryMP);
 		
 		Set<ProductBoundary> boundaryProducts = shoppingCartBoundary.getProducts();
-		Set<ProductEntity> entityProducts = entity.getProducts();
 		
 		if (boundaryProducts != null)
 			boundaryProducts.forEach(p -> {
-				if (!this.productDao.existsById(p.getProductId()))
-					throw new RuntimeException("Can not create shopping cart, one of the products does not exists."); // TODO return error code 400
+				if (!this.ProductExistsById(p.getProductId()))
+					throw new ProductNotFoundException();
 				if (p.getAmount() < 0)
-					throw new RuntimeException("Can not update shopping cart with a negative product amount."); // TODO return error code 400
+					throw new IllegalProductAmoutException();
 				
-				ProductEntity pe = new ProductEntity(p.getProductId(), p.getAmount());
+				ProductEntity pe = this.toProductEntity(p);
 				
-				entityProducts.remove(pe);
+				entity.removeProduct(pe);
 				if (pe.getAmount() != 0)
-					entityProducts.add(pe);
+					entity.addProduct(pe);
 			});
 		this.shoppingCartDao.save(entity);
 	}
@@ -149,30 +178,61 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 	public ShoppingCartBoundary[] getAll(FilterTypeEnum filterType, String filterValue, SortAttrEnum sortBy,
 			SortOrderEnum sortOrder, int size, int page) {
 		
+		Iterable<ShoppingCartEntity> res = null;
+		PageRequest pageRequest = PageRequest.of(page,
+				size,
+				sortOrder == SortOrderEnum.ASC ? Direction.ASC : Direction.DESC,
+				sortBy == SortAttrEnum.creation ? "creationTimestamp" : "user", "shoppingCartId");
+		
 		if (filterType == FilterTypeEnum.byNotExpired)
-			return this.shoppingCartDao.findByExpired(false)
-					.stream()
-					.map(this::toShoppingCartBoundary)
-					.collect(Collectors.toList())
-					.toArray(new ShoppingCartBoundary[0]);
+			res = this.shoppingCartDao.findByExpired(false, pageRequest);
 		
 		if (filterType == FilterTypeEnum.byUserEmail && !filterValue.isBlank())
-			return this.shoppingCartDao.findByUser(new UserEntity(filterValue))
-					.stream()
-					.map(this::toShoppingCartBoundary)
-					.collect(Collectors.toList())
-					.toArray(new ShoppingCartBoundary[0]);
+			res = this.shoppingCartDao.findByUser(new UserEntity(filterValue), pageRequest);
 			
+		if (res == null)
+			res = this.shoppingCartDao.findAll(pageRequest);
+		
 		return StreamSupport.stream(
-				this.shoppingCartDao
-				.findAll(PageRequest.of(page,
-						size,
-						sortOrder == SortOrderEnum.ASC ? Direction.ASC : Direction.DESC,
-						sortBy == SortAttrEnum.creation ? "creationTimestamp" : "user", "shoppingCartId"))
-				.spliterator(), false)
+				res.spliterator(), false)
 					.map(this::toShoppingCartBoundary)
 					.collect(Collectors.toList())
 					.toArray(new ShoppingCartBoundary[0]);
+	}
+
+	@Override
+	public void deleteAll() {
+		this.shoppingCartDao.deleteAll();
+	}
+
+	private boolean ProductExistsById(String productId) {
+		try {
+			this.shoppingCatalogClient.getProductById(productId);
+		} catch (NotFound e) {
+			return false;
+		} catch (Unauthorized e) {
+			return false;
+		}
+			return true;
+
+	}
+
+	private boolean UserExistsByEmail(String email) {
+		try {
+			this.usersManagementClient.getUserByEmail(email);
+		} catch (NotFound e) {
+			return false;
+		} catch (Unauthorized e) {
+			return false;
+		}
+		return true;
+	}
+	
+	private void validateProductBoundary(ProductBoundary p) {
+		if (!this.ProductExistsById(p.getProductId()))
+			throw new ProductNotFoundException();
+		if (p.getAmount() < 0)
+			throw new IllegalProductAmoutException();
 	}
 
 	private ShoppingCartBoundary toShoppingCartBoundary(ShoppingCartEntity entity) {
@@ -190,6 +250,10 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 		boundary.setMoreProperties(entity.getMoreProperties());
 		
 		return boundary;
+	}
+	
+	private ProductEntity toProductEntity(ProductBoundary productBoundary) {
+		return new ProductEntity(productBoundary.getProductId(), productBoundary.getAmount());
 	}
 	
 }
