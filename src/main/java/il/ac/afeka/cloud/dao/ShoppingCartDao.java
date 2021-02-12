@@ -4,7 +4,6 @@ import java.util.List;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.repository.PagingAndSortingRepository;
-import org.springframework.stereotype.Repository;
 
 import il.ac.afeka.cloud.data.ShoppingCartEntity;
 import il.ac.afeka.cloud.data.UserEntity;

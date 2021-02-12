@@ -25,7 +25,7 @@ dependencies {
 	implementation 'org.springframework.cloud:spring-cloud-stream-binder-kafka'
 	
     // https://mvnrepository.com/artifact/org.springdoc/springdoc-openapi-ui
-	implementation group: 'org.springdoc', name: 'springdoc-openapi-ui', version: '1.5.3'	
+	implementation group: 'org.springdoc', name: 'springdoc-openapi-ui', version: '1.5.3'		
 	
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.kafka:spring-kafka-test'

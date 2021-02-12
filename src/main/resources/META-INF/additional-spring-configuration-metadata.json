@@ -1,0 +1,17 @@
+{"properties": [
+  {
+    "name": "users-management-service.uri",
+    "type": "java.lang.String",
+    "description": "Users management service base URI"
+  },
+  {
+    "name": "shopping-catalog-service.uri",
+    "type": "java.lang.String",
+    "description": "Shopping catalog service base URI"
+  },
+  {
+    "name": "products-coupon-service.uri",
+    "type": "java.lang.String",
+    "description": "Products coupon service base URI"
+  }
+]}

@@ -21,7 +21,7 @@ public class ProductsCouponClient {
 		this.restTemplate = new RestTemplate();
 	}
 	
-	@Value("${shopping-catalog-service.uri}")
+	@Value("${products-coupon-service.uri}")
 	public void setUri(String uri) {
 		this.uri = uri;
 	}

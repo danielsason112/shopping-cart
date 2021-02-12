@@ -23,7 +23,9 @@ import il.ac.afeka.cloud.data.util.EntityFactory;
 import il.ac.afeka.cloud.enums.FilterTypeEnum;
 import il.ac.afeka.cloud.enums.SortAttrEnum;
 import il.ac.afeka.cloud.enums.SortOrderEnum;
+import il.ac.afeka.cloud.errors.EmptyCartCreationException;
 import il.ac.afeka.cloud.errors.IllegalProductAmoutException;
+import il.ac.afeka.cloud.errors.IllegalProductException;
 import il.ac.afeka.cloud.errors.ProductNotFoundException;
 import il.ac.afeka.cloud.errors.ShoppingCartNotFoundException;
 import il.ac.afeka.cloud.errors.UserNotFoundException;
@@ -35,6 +37,8 @@ import il.ac.afeka.cloud.layout.UserBoundary;
 
 @Service
 public class ShoppingCartServiceImp implements ShoppingCartService {
+	private final int COUPONS_REQUEST_SIZE = 100;
+	private final int MAX_COUPONS_REQUEST_SIZE = 1000;
 	private ShoppingCartDao shoppingCartDao;
 	private EntityFactory entityFactory;
 	private UsersManagementClient usersManagementClient;
@@ -58,13 +62,21 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 		if (userBoundary == null)
 			throw new UserNotProvidedException();
 		
+		if (userBoundary.getEmail() == null || userBoundary.getEmail().isBlank())
+			throw new UserNotProvidedException();
+		
 		if (!this.UserExistsByEmail(userBoundary.getEmail()))
 			throw new UserNotFoundException();
 			
 		Set<ProductBoundary> products = shoppingCartBoundary.getProducts();
 		
-		if (products != null)
-			products.forEach(p -> this.validateProductBoundary(p));
+		if (products == null)
+			throw new EmptyCartCreationException();
+		
+		if (products.isEmpty())
+			throw new EmptyCartCreationException();
+		
+		products.forEach(p -> this.validateProductBoundary(p));
 		
 		UserEntity userEntity = new UserEntity(userBoundary.getEmail());
 		
@@ -80,7 +92,6 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 						userEntity,
 						products.stream()
 							.map(this::toProductEntity)
-							.filter(p -> p.getAmount() > 0)
 							.collect(Collectors.toSet()),
 						shoppingCartBoundary.getMoreProperties())));
 	}
@@ -115,7 +126,7 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 		shoppingCart.getProducts().forEach(p -> {
 			List<CouponBoundary> coupons;
 			int page = 0;
-			int size = 100;
+			int size = COUPONS_REQUEST_SIZE;
 			try {
 				do {
 					coupons = this.productsCouponClient.getCouponsByProductId(p.getProductId(), "isUsed", "ASC", size, page);
@@ -128,7 +139,7 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 						if(coupons.get(coupons.size() - 1).isUsed())
 							break;
 					page++;
-				} while (coupons.size() == size);
+				} while (coupons.size() == size || page * COUPONS_REQUEST_SIZE > MAX_COUPONS_REQUEST_SIZE);
 			} catch (Exception e) {
 				System.err.println(e);
 			}
@@ -229,9 +240,16 @@ public class ShoppingCartServiceImp implements ShoppingCartService {
 	}
 	
 	private void validateProductBoundary(ProductBoundary p) {
+		if (p == null)
+			throw new IllegalProductException();
+		if (p.getProductId() == null || p.getProductId().isBlank())
+			throw new IllegalProductException();
+		
+		System.err.println(p);
+		
 		if (!this.ProductExistsById(p.getProductId()))
 			throw new ProductNotFoundException();
-		if (p.getAmount() < 0)
+		if (p.getAmount() <= 0)
 			throw new IllegalProductAmoutException();
 	}
 

@@ -21,7 +21,7 @@ public class UsersManagementClient {
 		this.restTemplate = new RestTemplate();
 	}
 	
-	@Value("${user-management-service.uri}")
+	@Value("${users-management-service.uri}")
 	public void setUri(String uri) {
 		this.uri = uri;
 	}
