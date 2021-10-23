@@ -1,4 +1,141 @@
 # Customer Shopping Cart Service 
+Shopping carts management microservice for E-commerce shops. Built with Spring Boot, MongoDB and Kafka. The services offers a RESTful API for creating and updating shopping carts
+
+## Usage Instructions 
+
+### Actions
+#### POST /shoppingCarts
+Accepts a Shopping Cart details and stores it. If the user has an active shopping cart, its status will be changed to expired.
+If the user or one of the products does not exist, the service will return an error code (400).
+#### GET /shoppingCarts/{email}
+Returns the active Shopping Cart by email.
+#### PUT /shoppingCarts/{email}
+Updates an active Shopping Cart by email. If no active Shopping Cart exists, the service will return an error code (404).
+#### GET /shoppingCarts?filterType=byUserEmail&filterValue={value}&sortBy={sortArrt}&sortOrder={order}&size={size}&page={page}
+Returns all of the Shopping Carts for a specific user.
+#### GET /shoppingCarts?filterType=byNotExpired&sortBy={sortArrt}&sortOrder={order}&size={size}&page={page}
+Returns all of the active Shopping Carts.
+#### GET /shoppingCarts?sortBy={sortArrt}&sortOrder={order}&size={size}&page={page}
+Returns all of the Shopping Carts.
+#### DELETE /shoppingCarts
+Deletes all of the Shopping Carts (for testing).
+#### Sorting Results
+The default paramater for sorting (sortBy) is creationTimestamp. The sortOrder paramater accepts ASC/DESC values.
+
+### JSON Examples
+#### Shopping Cart:
+```
+{
+    “user”: {
+        “email” : “customer12@shop.com”
+    },
+    "creationTimestamp": "2020-12-10T04:12:39.053+0000",
+    “products” : [
+        {
+            “id”: “846x76”,
+            “amount”: 1,
+            “availableCoupons”: [
+                {“id”: “1762638”}
+            ]
+    },
+    {
+        “id”: 27bf35l”,
+        “amount”: 3
+    } ],
+    “expired”: false
+}
+ 
+ 
+{
+    “user”: {
+        “email” : “customer14@shop.com”
+    },
+    "creationTimestamp": "2020-12-12T04:12:39.053+0000",
+    “products” : [
+        {
+            “id”: “846x76”,
+            “amount”: 2,
+            “availableCoupons”: [
+                {“id”: “1762638”},
+                {“id”: “1738871”}]
+        }],
+    “expired”: true,
+    “completedPurchase”: true,
+    “shippingDest”: “IL”
+}
+```
+#### Create shopping cart Json example: 
+```
+{
+    “user:” {
+        “email” : “customer14@shop.com”
+    },
+    “products”: [
+    {
+        “id”: “4736cg8”,
+        “amount”: 1
+    }]
+}
+ ```
+#### Update shopping cart Json examples:
+```
+{
+    “user”: {
+        “email” : “customer14@shop.com”
+    },
+    “products”: [
+    {
+        “id”: “4736cg8”,
+        “amount”: 2
+    }]
+}
+ 
+{
+    “user”: {
+        “email” : “customer14@shop.com”
+    },
+    “expired”: true
+}
+```
+
+### Build And Run
+Import the root folder to an IDE and build it with Gradle, then run it.
+In Spring Tool Suite / Eclipse:
+- File > Import > Gradle > Existing Gradle Project.
+- Click next until the “Project root directory” option appears and select the root folder.
+- Click finish and wait for the build to finish.
+- Right click “il.ac.cloud.afeka.CustomerShoppingCartService” > Run as > Spring Boot App.
+The default port is set to 8080 and can be changed in the application.properties file. 
+
+## Kafka Topics Subscription
+The service is listening for the topic “new-shopping-cart-event” on the Kafka default server configuration (“localhost:9092”). 
+### Running a Kafka Server
+First, download Kafka [here](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.7.0/kafka_2.13-2.7.0.tgz). 
+
+Then, open a terminal session in the root directory and start the ZooKeeper service (on Windows add “win/” after “bin/” and replace all “.sh” with “.bat” on all of the following commands): 
+```bash
+bin/zookeeper-server-start.sh config/zookeeper.properties
+```
+Next, on another terminal session start the Kafka service: 
+### Creating Topics And Events
+Open another terminal session and create the “new-shopping-cart-event” topic: 
+```bash
+bin/kafka-server-start.sh config/server.properties
+```
+Start a Kafka console producer for the created topic: 
+```bash
+bin/kafka-topics.sh --create --topic new-shopping-cart-event --bootstrap-server localhost:9092
+```
+Finally, send a shopping cart Json. Each line will result in an event that the consumer in the service will handle, and store the provided shopping cart: 
+```bash
+bin/kafka-console-producer.sh --topic new-shopping-cart-event --bootstrap-server localhost:9092 
+> { "user:" { "email" : "customer14@shop.com" }, "products": [ { "productId": "4736cg8", "amount": 1 } ] }
+```
+In order to listen to a different topic change the “new-shopping-cart-event” on the application.properties file (line 19): 
+```bash
+spring.cloud.stream.bindings.input-consumer.destination=new-shopping-car t-event
+```
+ 
 ## DB Setup And Configuration
 The Service requires MongoDb database, with two optional setups: 
 ### Running A Standalone MongoDb Database
@@ -53,42 +190,3 @@ When querying for a valid shopping cart (GET /shoppingCarts/{email}), the servic
 ```
 products-coupon-service.uri=http://localhost:8083 
 ```
-## Usage Instructions 
-### Build And Run
-Import the root folder to an IDE and build it with Gradle, then run it.
-In Spring Tool Suite / Eclipse:
-- File > Import > Gradle > Existing Gradle Project.
-- Click next until the “Project root directory” option appears and select the root folder.
-- Click finish and wait for the build to finish.
-- Right click “il.ac.cloud.afeka.CustomerShoppingCartService” > Run as > Spring Boot App.
-The default port is set to 8080 and can be changed in the application.properties file. 
-
-## Kafka Topics Subscription
-The service is listening for the topic “new-shopping-cart-event” on the Kafka default server configuration (“localhost:9092”). 
-### Running a Kafka Server
-First, download Kafka [here](https://www.apache.org/dyn/closer.cgi?path=/kafka/2.7.0/kafka_2.13-2.7.0.tgz). 
-
-Then, open a terminal session in the root directory and start the ZooKeeper service (on Windows add “win/” after “bin/” and replace all “.sh” with “.bat” on all of the following commands): 
-```bash
-bin/zookeeper-server-start.sh config/zookeeper.properties
-```
-Next, on another terminal session start the Kafka service: 
-### Creating Topics And Events
-Open another terminal session and create the “new-shopping-cart-event” topic: 
-```bash
-bin/kafka-server-start.sh config/server.properties
-```
-Start a Kafka console producer for the created topic: 
-```bash
-bin/kafka-topics.sh --create --topic new-shopping-cart-event --bootstrap-server localhost:9092
-```
-Finally, send a shopping cart Json. Each line will result in an event that the consumer in the service will handle, and store the provided shopping cart: 
-```bash
-bin/kafka-console-producer.sh --topic new-shopping-cart-event --bootstrap-server localhost:9092 
-> { "user:" { "email" : "customer14@shop.com" }, "products": [ { "productId": "4736cg8", "amount": 1 } ] }
-```
-In order to listen to a different topic change the “new-shopping-cart-event” on the application.properties file (line 19): 
-```bash
-spring.cloud.stream.bindings.input-consumer.destination=new-shopping-car t-event
-```
- 
